@@ -1,0 +1,62 @@
+my_dict = {
+    'minute1': {
+        'ip1': {
+            'syn': Value,
+            'ack': Value,
+            'syn-ack pair': Value,
+            'other items': Value,
+        },
+        'ip2': {
+            'syn': Value,
+            'ack': Value,
+            'syn-ack pair': Value,
+            'other items': Value,
+        },
+        'ip3': {
+            'syn': Value,
+            'ack': Value,
+            'syn-ack pair': Value,
+            'other items': Value,
+        }
+    },
+    'minute2': {
+        'ip1': {
+            'syn': Value,
+            'ack': Value,
+            'syn-ack pair': Value,
+            'other items': Value,
+        },
+        'ip2': {
+            'syn': Value,
+            'ack': Value,
+            'syn-ack pair': Value,
+            'other items': Value,
+        },
+        'ip3': {
+            'syn': Value,
+            'ack': Value,
+            'syn-ack pair': Value,
+            'other items': Value,
+        }
+    },
+    'minute3': {
+        'ip1': {
+            'syn': Value,
+            'ack': Value,
+            'syn-ack pair': Value,
+            'other items': Value,
+        },
+        'ip2': {
+            'syn': Value,
+            'ack': Value,
+            'syn-ack pair': Value,
+            'other items': Value,
+        },
+        'ip3': {
+            'syn': Value,
+            'ack': Value,
+            'syn-ack pair': Value,
+            'other items': Value,
+        }
+    }
+}
