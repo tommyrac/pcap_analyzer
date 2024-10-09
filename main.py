@@ -3,21 +3,24 @@ from datetime import datetime
 import time
 import pprint
 
+print('\n\nNote, this program mainly checks for common attack attempts and UDP traffic behavior. For the purposes of this tool, protocols such as UDP, RTP, RTSP, and QUIC have been categorized under \'UDP\' \n\nThis program allows expected mac and ip addresses to be specified, and will check for behavior outside of what is expected\n\nThe capture may take up to a few seconds to analyze\n\n')
+
 
 # ###################### variables
 start_runtime = time.time()
+target_file = input("Provide path to pcap file (for demonstration, type 'nmap_cap.pcapng'): \n\n")
+print('Please wait while capture is analyzed...\n\n')
+cap = pyshark.FileCapture(target_file) 
 
-cap = pyshark.FileCapture('nmap_cap.pcapng') 
+
+cap.load_packets() 
 
 
-cap.load_packets()  # Loads all packets into memory
-
-# Now you can access the packets quickly
 print(f"Total number of packets: {len(cap)}")
-f_packet = cap[0]  # Access the first packet
-l_packet = cap[-1]  # Access the last packet
+f_packet = cap[0] 
+l_packet = cap[-1]  
 
-#----------------------------------------------------------use for big caps
+#----------------------------------------------------------use for large caps
 # packet_count = sum(1 for packet in cap)
 # print(f"Total number of packets: {packet_count}")
 
@@ -30,9 +33,7 @@ l_packet = cap[-1]  # Access the last packet
 # for l_packet in cap:
 #     pass 
 #----------------------------------------------------------
-user_ips = []
-user_macs = []
-user_uagents = []
+
 
 src_ip_list = []
 dst_ip_list = []
@@ -50,23 +51,24 @@ seconds = round(duration.total_seconds(), 2)
 print(f"Capture duration: {duration}")
 print(f"Duration in seconds: {seconds}")
 
-def user_info(user_ips, user_macs, user_uagents):
-    if user_ips:
-        print('\nExpected IP\'(s): {user_ips}')
+
+IOT_ip = []
+IOT_mac = []
+IOT_ua = []
+
+def user_info(IOT_ip, IOT_mac, IOT_ua):
+    if IOT_ip:
+        print(f'\nExpected IP\'(s): {IOT_ip}')
     else:
         print('\nNo expected IP\'s defined')
-    if user_macs:
-        print('Expected MAC address\'(es): {user_macs}')
+    if IOT_mac:
+        print(f'Expected MAC address\'(es): {IOT_mac}')
     else:
         print('No expected MAC\'s defined')
-    if user_uagents:
-        print('Expected user agents\'(s): {user_uagents}\n')
+    if IOT_ua:
+        print(f'Expected user agents\'(s): {IOT_ua}\n')
     else:
         print('No expected user agents\'s defined\n')
-
-
-
-
 
 
 ##################### overview
@@ -89,6 +91,7 @@ def cap_info(cap):
 ##################### brute check
 
 master = {}
+trigger_list = {}  
 global_chunk_index = None
 def gather(master):
     global global_chunk_index
@@ -99,7 +102,6 @@ def gather(master):
         return f"{chunk_index}s"
     
     
-    # cap = pyshark.FileCapture('3minute_cap.pcapng')
     start_time = cap[0].sniff_time
 
     for packet in cap:
@@ -120,35 +122,27 @@ def gather(master):
                 src_port = p.tcp.srcport
                 dst_port = p.tcp.dstport
                 pkey = f"TCP {src_ip}:{src_port} -> {dst_ip}:{dst_port}"
+                
                 if pkey not in master[chunk_index]:
-                    if int(p.tcp.flags, 16) & 0x02 | int(p.tcp.flags, 16) & 0x10 != 0:
+                    if (int(p.tcp.flags, 16) & 0x02) or (int(p.tcp.flags, 16) & 0x10):
                         master[chunk_index][pkey] = {
-                            'tcp_src_ip': '', 'tcp_src_mac': '', 'tcp_dst_ip': '', 'tcp_dst_mac': '', 
-                            'syn': 0, 'ack': 0, 'syn-ack': 0, 'tcp_dst_port': 0, 'tcp_src_port': 0, 
-                            'user_agent': ''  # Add user_agent field
+                            'tcp_src_ip': src_ip, 'tcp_src_mac': p.eth.src, 'tcp_dst_ip': dst_ip, 'tcp_dst_mac': p.eth.dst, 
+                            'syn': 0, 'ack': 0, 'syn-ack': 0, 'tcp_dst_port': dst_port, 'tcp_src_port': src_port, 'user_agent': ''
                         }
+                        
+                
                 if int(p.tcp.flags, 16) & 0x02: 
                     master[chunk_index][pkey]['syn'] += 1
-                    master[chunk_index][pkey]['tcp_dst_ip'] = p.ip.dst
-                    master[chunk_index][pkey]['tcp_dst_port'] = p.tcp.dstport
-                    master[chunk_index][pkey]['tcp_src_port'] = p.tcp.srcport
-                    master[chunk_index][pkey]['tcp_src_mac'] = p.eth.src
-                    master[chunk_index][pkey]['tcp_dst_mac'] = p.eth.dst
-                    master[chunk_index][pkey]['tcp_src_ip'] = p.ip.src
-                elif int(p.tcp.flags, 16) & 0x10: 
+                if int(p.tcp.flags, 16) & 0x10: 
                     master[chunk_index][pkey]['ack'] += 1  
-                    master[chunk_index][pkey]['tcp_dst_ip'] = p.ip.dst
-                    master[chunk_index][pkey]['tcp_dst_port'] = p.tcp.dstport
-                    master[chunk_index][pkey]['tcp_src_port'] = p.tcp.srcport
-                    master[chunk_index][pkey]['tcp_src_mac'] = p.eth.src
-                    master[chunk_index][pkey]['tcp_dst_mac'] = p.eth.dst
-                    master[chunk_index][pkey]['tcp_src_ip'] = p.ip.src
+
+                
                 if 'HTTP' in p:
                     try:
-                        user_agent = p.http.user_agent
-                        master[chunk_index][pkey]['user_agent'] = user_agent
+                        master[chunk_index][pkey]['user_agent'] = p.http.user_agent
                     except AttributeError:
-                        pass
+                        pass  
+
             elif 'IP' in p and any(proto in p for proto in ['UDP', 'RTP', 'RTSP', 'QUIC']):
                 packet_time = p.sniff_time
                 chunk_index = get_time_chunk(start_time, packet_time)
@@ -157,38 +151,35 @@ def gather(master):
                 src_port = p.udp.srcport
                 dst_port = p.udp.dstport
                 pkey = f"UDP {src_ip}:{src_port} -> {dst_ip}:{dst_port}"
+                
                 if pkey not in master[chunk_index]:
+                    
                     master[chunk_index][pkey] = {
-                        'udp_src_ip': '', 'udp_src_mac': '', 'udp_dst_ip': '', 'udp_dst_mac': '', 
-                        'udp': 0, 'udp_dst_port': '', 'udp_src_port': ''
+                        'udp_src_ip': src_ip, 'udp_src_mac': p.eth.src, 'udp_dst_ip': dst_ip, 'udp_dst_mac': p.eth.dst,
+                        'udp': 1, 'udp_dst_port': dst_port, 'udp_src_port': src_port, 'user_agent': ''
                     }
-                    master[chunk_index][pkey]['udp'] += 1
-                    master[chunk_index][pkey]['udp_dst_ip'] = p.ip.dst
-                    master[chunk_index][pkey]['udp_dst_port'] = p.udp.dstport
-                    master[chunk_index][pkey]['udp_src_port'] = p.udp.srcport
-                    master[chunk_index][pkey]['udp_src_mac'] = p.eth.src
-                    master[chunk_index][pkey]['udp_dst_mac'] = p.eth.dst
                 else:
-                    master[chunk_index][pkey]['udp_src_ip'] = p.ip.src 
+                    
                     master[chunk_index][pkey]['udp'] += 1
-                    master[chunk_index][pkey]['udp_dst_ip'] = p.ip.dst
-                    master[chunk_index][pkey]['udp_dst_port'] = p.udp.dstport  
-                    master[chunk_index][pkey]['udp_src_port'] = p.udp.srcport
-                    master[chunk_index][pkey]['udp_src_mac'] = p.eth.src
-                    master[chunk_index][pkey]['udp_dst_mac'] = p.eth.dst
+
+                
+                if 'HTTP' in p:
+                    try:
+                        master[chunk_index][pkey]['user_agent'] = p.http.user_agent
+                    except AttributeError:
+                        pass  
+
+
     flag_stat(cap, start_time, master)
-    return master 
+    return master             
 
-
-trigger_list = {}             
-
-def detect_nmap_scan(master, port_threshold=10):  # The threshold can be adjusted
+def detect_nmap_scan(master, port_threshold=10):  
     potential_scans = {}
     
     print("## Detecting Potential Nmap Scans ##")
     
     for chunk, connections in master.items():
-        scan_candidates = {}  # Store how many unique ports each src_ip or src_mac has targeted
+        scan_candidates = {}  
         
         for pkey, items in connections.items():
             src_ip = items.get('tcp_src_ip', '')
@@ -199,29 +190,28 @@ def detect_nmap_scan(master, port_threshold=10):  # The threshold can be adjuste
             if not src_ip and not src_mac:
                 continue
 
-            # Track by src_ip or src_mac
+            
             identifier = src_ip if src_ip else src_mac
 
-            # Initialize dictionary for this identifier if it doesn't exist
+            
             if identifier not in scan_candidates:
-                scan_candidates[identifier] = set()  # Use a set to store unique destination ports
+                scan_candidates[identifier] = set()  
 
-            # Add the destination port to the set for the src_ip/src_mac
+            
             if dst_port:
                 scan_candidates[identifier].add(dst_port)
 
-        # Check if any identifier (src_ip or src_mac) has sent to too many different ports
+        
         for identifier, target_ports in scan_candidates.items():
-            if len(target_ports) > port_threshold:  # If more than 'port_threshold' unique ports were hit
+            if len(target_ports) > port_threshold:  
                 if identifier not in potential_scans:
                     potential_scans[identifier] = []
                 potential_scans[identifier].append({
                     'chunk': chunk,
-                    'target_ips': len(set([target[0] for target in target_ports])),  # Get unique target IPs
-                    'port_count': len(target_ports)  # Count of unique ports attempted
+                    'target_ips': len(set([target[0] for target in target_ports])),  
+                    'port_count': len(target_ports)  
                 })
 
-    # Output the results
     if potential_scans:
         for identifier, scans in potential_scans.items():
             print(f"\nPotential Nmap scan detected for {identifier}:")
@@ -230,8 +220,6 @@ def detect_nmap_scan(master, port_threshold=10):  # The threshold can be adjuste
     else:
         print("No potential Nmap scans detected.")
 
-
-
 def bf_triggers(master):
     check = 0
     print('## POTENTIAL BRUTE FORCE ##\n')
@@ -239,8 +227,8 @@ def bf_triggers(master):
         time_in_seconds = int(chunk.replace('s', ''))
         for pkey, items in connections.items():
             if 'TCP' in pkey:
-                if items['syn'] / (time_in_seconds + 1) > 50:   # this can be changed for sensitivity, should link to 
-                    check = 1                                   # earlier time check
+                if items['syn'] / (time_in_seconds + 1) > 50:   
+                    check = 1                                   
                     bar = ''
                     for i in range(items['syn']):
                         bar += '='
@@ -263,8 +251,8 @@ def bf_triggers_mac(master):
         time_in_seconds = int(chunk.replace('s', ''))
         for pkey, items in connections.items():
             if 'TCP' in pkey:
-                if items['syn'] / (time_in_seconds + 1) > 50:   # this can be changed for sensitivity, should link to 
-                    check = 1                                   # earlier time check
+                if items['syn'] / (time_in_seconds + 1) > 50:   
+                    check = 1                                   
                     bar = ''
                     for i in range(items['syn']):
                         bar += '='
@@ -280,7 +268,6 @@ def bf_triggers_mac(master):
     else:
         print("No potential brute force detected.")
 
-
 def udp_traffic(master):
     check = 0
     print('## UDP Connections by IP ##\n')
@@ -291,10 +278,10 @@ def udp_traffic(master):
                 bar = ''
                 udp_count = items['udp']
                 if udp_count <= 60:
-                    bar = '=' * udp_count  # Add the exact number of '='
-                    bar += ']'  # Close the bar
+                    bar = '=' * udp_count  
+                    bar += ']'  
                 else:
-                    bar = '=' * 60  # Limit to 30 '=' characters
+                    bar = '=' * 60  
                     bar += '>>'
                 if len(chunk) == 2:
                     print(f'{chunk}   | {bar} {items['udp']} UDP packets from {items['udp_src_ip']} port {items['udp_src_port']}  ->  {items['udp_dst_ip']} port {items['udp_dst_port']}')
@@ -317,10 +304,10 @@ def mac_udp_traffic(master):
                 bar = ''
                 udp_count = items['udp']
                 if udp_count <= 60:
-                    bar = '=' * udp_count  # Add the exact number of '='
-                    bar += ']'  # Close the bar
+                    bar = '=' * udp_count  
+                    bar += ']'  
                 else:
-                    bar = '=' * 60  # Limit to 30 '=' characters
+                    bar = '=' * 60  
                     bar += '>>'
                 if len(chunk) == 2:
                     print(f'{chunk}   | {bar} {items['udp']} UDP packets from {items['udp_src_mac']} port {items['udp_src_port']}  ->  {items['udp_dst_mac']} port {items['udp_dst_port']}')
@@ -332,28 +319,10 @@ def mac_udp_traffic(master):
         print('done')
     else:
         print("\nNo UDP connections detected.")
-master = gather(master)
-
-
-# ###################### control
-
-cap_info(cap)
-# high_syn(cap)
-user_info(user_ips, user_macs, user_uagents)
-
-
-# print('********** Stats based on IP address **********')
-# bf_triggers(master, trigger_list)
-# print(udp_traffic(master, udp_list))
-# print('********** Stats based on MAC address **********')
-# print(bf_triggers_mac(master, trigger_list))
-# print(mac_udp_traffic(master, udp_list))
-# print('********** Stats based on User Agent **********')
 
 
 
 def full(master):
-    gather(master)
     print('********** Stats based on IP address **********')
     udp_traffic(master)
     bf_triggers(master)
@@ -362,46 +331,109 @@ def full(master):
     bf_triggers_mac(master)
     detect_nmap_scan(master, port_threshold=10)
     
-
 def ip_stats(master):
     print('********** Stats based on IP address **********')
-    gather(master)
     udp_traffic(master)
     bf_triggers(master)
 
 def mac_stats(master):
+    print("mac_stats called")
     print('********** Stats based on MAC address **********')
-    gather(master)
     mac_udp_traffic(master)
     bf_triggers_mac(master)
-
-    
 
 def alerts():
     detect_nmap_scan(master, port_threshold=10)
 
 def user_agent_stats():
-    print('********** Stats based on User Agent **********')
-    pass
-mac_stats(master)
+    user_agents = set()  
+    print('********** User Agents found in capture **********\n')
+    
+    for chunk, connections in master.items():
+        for pkey, data in connections.items():
+            if 'user_agent' in data and data['user_agent']:
+                user_agents.add(data['user_agent'])  
+
+   
+    if user_agents:
+        for agent in user_agents:
+            print(agent)
+    else:
+        print('No user agents found.')
 
 
+
+def solenoid(master):
+    global IOT_mac, IOT_ip, IOT_ua, target_file
+    
+    while True:
+        option1 = input("\n\n********** Tool Options **********\nWould you like to define IOT device? (yes/no): ").lower()
+        
+        if option1 == 'yes' or option1 == 'no':
+            break  
+        else:
+            print("Please type 'yes' or 'no'.")
+    if option1 == 'yes':
+        print('\nSorry! Not quite functional yet :-(')
+        # IOT_mac = input('IOT MAC address(es): ')
+        # IOT_ip = input('IOT IP address(es): ')
+        # IOT_ua = input('IOT user agent(s): ')
+
+
+    while True:
+        option2 = input("\nWould you like to define expected behavior? (yes/no): ").lower()
+        
+        if option2 == 'yes' or option2 == 'no':
+            break  
+        else:
+            print("Please type 'yes' or 'no'.")
+    if option2 == 'yes':
+        print('\nSorry! Not quite functional yet :-(')
+
+        # exp_mac = input('Expected MAC address(es): ')
+        # exp_ip = input('Expected IP address(es): ')
+        # exp_ua = input('Expected user agent(s): ')
+    while True:
+        option3 = input('\nWhat would you like to analyze: \n'
+                        '1. All stats\n'
+                        '2. Stats by IP address\n'
+                        '3. Stats by MAC address\n'
+                        '4. User Agent info\n'
+                        '5. Alerts only\n'
+                        '6. Exit\n')
+        
+        
+        if option3.isdigit() and int(option3) in (range(1, 7)):
+            option3 = int(option3)  
+        else:
+            print('Enter a valid number between 1 - 6')
+            continue  
+
+        if option3 == 1:
+            user_info(IOT_ip, IOT_mac, IOT_ua)
+            full(master)
+        elif option3 == 2:
+            user_info(IOT_ip, IOT_mac, IOT_ua)
+            ip_stats(master)
+        elif option3 == 3:
+            print('progress')
+            user_info(IOT_ip, IOT_mac, IOT_ua)
+            mac_stats(master)
+        elif option3 == 4:
+            user_info(IOT_ip, IOT_mac, IOT_ua)
+            user_agent_stats()
+        elif option3 == 5:
+            user_info(IOT_ip, IOT_mac, IOT_ua)
+            alerts()
+        elif option3 == 6:
+            print("Exiting the program.")
+            break
+
+cap_info(cap)
+master = gather(master)
 end_runtime = time.time()
 runtime = end_runtime - start_runtime
-print(f"Total program runtime: {runtime:.4f} seconds")
-
-
-
-################### utility
-
-# Print the layers in the packet
-# print(f"Layers: {[layer.layer_name for layer in packet.layers]}")
-
-# # Print all fields in each layer
-# for layer in packet.layers:
-#     print(f"Layer: {layer.layer_name}")
-#     print(dir(layer))
-# print(cap[2].sniff_time)
-
+print(f"Total time to analyze: {runtime:.4f} seconds")
+solenoid(master)
 
 
